@@ -1,0 +1,7 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="GltfRenderer.vcxproj" Id="bdbb78fd-e984-42dd-9678-59da200bcc15" />
+</Solution>
