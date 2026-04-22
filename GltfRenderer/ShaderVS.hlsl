@@ -1,6 +1,6 @@
 #include "ShaderShared.h"
 
-PSInput VSMain(float3 position: POSITION) {
+PSInput VSMain(float3 position: POSITION, float2 uv: TEXCOORD) {
   float4x4 rotation = float4x4(
     0.7, 0.0, 0.7, 0.0,
     0.0, 1.0, 0.0, 0.0,
@@ -41,7 +41,7 @@ PSInput VSMain(float3 position: POSITION) {
     
   PSInput result;
   result.position = mul(float4(position, 1.0), mvp);
-  result.color = float4(position.x * 0.25 + 0.5, position.y * 0.25 + 0.5, position.z * 0.25 + 0.5, 1.0);
+  result.uv = uv;
     
   return result;
 }

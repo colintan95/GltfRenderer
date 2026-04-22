@@ -25,14 +25,18 @@ bool App::Init(HWND hwnd) {
 
   CreatePipeline();
 
+  CreateDescriptorHeaps();
+
   CreateIndexBuffer();
-  CreateVertexBuffer();
+  CreateVertexBuffers();
+
+  CreateTexture();
 
   return true;
 }
 
 void App::Render() {
-  if (m_PresentFence->GetCompletedValue() < m_PresentFenceValue) {
+  if (m_Fence->GetCompletedValue() < m_FenceValue) {
     return;
   }
 
@@ -42,6 +46,11 @@ void App::Render() {
   m_CmdList->Reset(m_CmdAlloc.Get(), m_Pipeline.Get());
 
   m_CmdList->SetGraphicsRootSignature(m_RootSig.Get());
+
+  ID3D12DescriptorHeap* heaps[] = { m_SrvHeap.Get() };
+  m_CmdList->SetDescriptorHeaps(std::size(heaps), heaps);
+
+  m_CmdList->SetGraphicsRootDescriptorTable(0, m_SrvHeap->GetGPUDescriptorHandleForHeapStart());
 
   D3D12_VIEWPORT viewport = {
     .TopLeftX = 0,
@@ -87,9 +96,10 @@ void App::Render() {
   m_CmdList->ClearRenderTargetView(rtvHandle, color, 0, nullptr);
 
   m_CmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
   m_CmdList->IASetIndexBuffer(&m_IdxBufferView);
-  m_CmdList->IASetVertexBuffers(0, 1, &m_VertBufferView);
+
+  D3D12_VERTEX_BUFFER_VIEW vertBufferViews[] = { m_PosBufferView, m_UvBufferView };
+  m_CmdList->IASetVertexBuffers(0, std::size(vertBufferViews), vertBufferViews);
 
   auto vertCount = m_Model.IdxBuffer.Data.size();
   m_CmdList->DrawInstanced(static_cast<uint32_t>(vertCount), 1, 0, 0);
@@ -114,8 +124,8 @@ void App::Render() {
 
   m_SwapChain->Present(1, 0);
 
-  m_PresentFenceValue++;
-  m_CmdQueue->Signal(m_PresentFence.Get(), m_PresentFenceValue);
+  m_FenceValue++;
+  m_CmdQueue->Signal(m_Fence.Get(), m_FenceValue);
 }
 
 void App::CreateDevice() {
@@ -183,8 +193,8 @@ void App::CreateSwapChainAndCmdList() {
     m_Device->CreateRenderTargetView(m_RenderTargets[i].Get(), nullptr, rtvHandle);
   }
 
-  m_PresentFenceValue = 0;
-  m_Device->CreateFence(m_PresentFenceValue, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&m_PresentFence));
+  m_FenceValue = 0;
+  m_Device->CreateFence(m_FenceValue, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&m_Fence));
 
   m_Device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&m_CmdAlloc));
   m_Device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_CmdAlloc.Get(), nullptr,
@@ -194,17 +204,54 @@ void App::CreateSwapChainAndCmdList() {
 }
 
 void App::CreatePipeline() {
-  D3D12_ROOT_SIGNATURE_DESC rootSigDesc = {
-    .NumParameters = 0,
-    .pParameters = nullptr,
-    .NumStaticSamplers = 0,
-    .pStaticSamplers = nullptr,
-    .Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
+  D3D12_DESCRIPTOR_RANGE1 range = {
+    .RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
+    .NumDescriptors = 1,
+    .BaseShaderRegister = 0,
+    .RegisterSpace = 0,
+    .Flags = D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC,
+    .OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND
+  };
+
+  D3D12_ROOT_PARAMETER1 rootParam = {
+    .ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
+    .DescriptorTable = {
+      .NumDescriptorRanges = 1,
+      .pDescriptorRanges = &range
+    },
+    .ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL
+  };
+
+  D3D12_STATIC_SAMPLER_DESC sampler = {
+    .Filter = D3D12_FILTER_MIN_MAG_MIP_POINT,
+    .AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP,
+    .AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP,
+    .AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP,
+    .MipLODBias = 0,
+    .MaxAnisotropy = 0,
+    .ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER,
+    .BorderColor = D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK,
+    .MinLOD = 0.f,
+    .MaxLOD = D3D12_FLOAT32_MAX,
+    .ShaderRegister = 0,
+    .RegisterSpace = 0,
+    .ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL
+  };
+
+  D3D12_VERSIONED_ROOT_SIGNATURE_DESC rootSigDesc = {
+    .Version = D3D_ROOT_SIGNATURE_VERSION_1_1,
+    .Desc_1_1 = {
+      .NumParameters = 1,
+      .pParameters = &rootParam,
+      .NumStaticSamplers = 1,
+      .pStaticSamplers = &sampler,
+      .Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
+    }
   };
 
   ComPtr<ID3DBlob> signature;
   ComPtr<ID3DBlob> error;
-  D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1, &signature, &error);
+  D3D12SerializeVersionedRootSignature(&rootSigDesc, &signature, &error);
 
   m_Device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(),
       IID_PPV_ARGS(&m_RootSig));
@@ -256,14 +303,21 @@ void App::CreatePipeline() {
   };
 
   D3D12_DEPTH_STENCIL_DESC depthStencil = {
-    .DepthEnable = true,
-    .DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL,
-    .DepthFunc = D3D12_COMPARISON_FUNC_LESS,
+    .DepthEnable = false,
     .StencilEnable = false
   };
 
+  //D3D12_DEPTH_STENCIL_DESC depthStencil = {
+  //  .DepthEnable = true,
+  //  .DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL,
+  //  .DepthFunc = D3D12_COMPARISON_FUNC_LESS,
+  //  .StencilEnable = false
+  //};
+
   D3D12_INPUT_ELEMENT_DESC inputs[] = {
     { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+      0 },
+    { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 1, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
       0 }
   };
 
@@ -329,45 +383,231 @@ void App::CreateIndexBuffer() {
   };
 }
 
-void App::CreateVertexBuffer() {
-  auto size = m_Model.PosBuffer.Data.size() * m_Model.PosBuffer.NumComponents * sizeof(float);
-
-  D3D12_HEAP_PROPERTIES heapProps = {
-    .Type = D3D12_HEAP_TYPE_UPLOAD,
-    .CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
-    .MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN,
-    .CreationNodeMask = 1,
-    .VisibleNodeMask = 1
+void App::CreateDescriptorHeaps() {
+  D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {
+    .Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
+    .NumDescriptors = 1,
+    .Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE
   };
 
-  D3D12_RESOURCE_DESC bufferDesc = {
-    .Dimension = D3D12_RESOURCE_DIMENSION_BUFFER,
+  m_Device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&m_SrvHeap));
+}
+
+void App::CreateVertexBuffers() {
+  {
+    uint32_t stride = m_Model.PosBuffer.NumComponents * sizeof(float);
+    uint32_t size = static_cast<uint32_t>(m_Model.PosBuffer.Data.size()) * stride;
+
+    D3D12_HEAP_PROPERTIES heapProps = {
+      .Type = D3D12_HEAP_TYPE_UPLOAD,
+      .CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+      .MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN,
+      .CreationNodeMask = 1,
+      .VisibleNodeMask = 1
+    };
+
+    D3D12_RESOURCE_DESC bufferDesc = {
+      .Dimension = D3D12_RESOURCE_DIMENSION_BUFFER,
+      .Alignment = 0,
+      .Width = size,
+      .Height = 1,
+      .DepthOrArraySize = 1,
+      .MipLevels = 1,
+      .Format = DXGI_FORMAT_UNKNOWN,
+      .SampleDesc = {.Count = 1, .Quality = 0 },
+      .Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+      .Flags = D3D12_RESOURCE_FLAG_NONE
+    };
+
+    m_Device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &bufferDesc,
+        D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&m_PosBuffer));
+
+    std::byte* mapped = nullptr;
+    m_PosBuffer->Map(0, nullptr, reinterpret_cast<void**>(&mapped));
+
+    memcpy(mapped, m_Model.PosBuffer.Data.data(), size);
+
+    m_PosBuffer->Unmap(0, nullptr);
+
+    m_PosBufferView = {
+      .BufferLocation = m_PosBuffer->GetGPUVirtualAddress(),
+      .SizeInBytes = size,
+      .StrideInBytes = stride
+    };
+  }
+  
+  {
+    uint32_t stride = m_Model.UvBuffer.NumComponents * sizeof(float);
+    uint32_t size = static_cast<uint32_t>(m_Model.UvBuffer.Data.size()) * stride;
+
+    D3D12_HEAP_PROPERTIES heapProps = {
+      .Type = D3D12_HEAP_TYPE_UPLOAD,
+      .CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+      .MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN,
+      .CreationNodeMask = 1,
+      .VisibleNodeMask = 1
+    };
+
+    D3D12_RESOURCE_DESC bufferDesc = {
+      .Dimension = D3D12_RESOURCE_DIMENSION_BUFFER,
+      .Alignment = 0,
+      .Width = size,
+      .Height = 1,
+      .DepthOrArraySize = 1,
+      .MipLevels = 1,
+      .Format = DXGI_FORMAT_UNKNOWN,
+      .SampleDesc = {.Count = 1, .Quality = 0 },
+      .Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+      .Flags = D3D12_RESOURCE_FLAG_NONE
+    };
+
+    m_Device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &bufferDesc,
+      D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&m_UvBuffer));
+
+    std::byte* mapped = nullptr;
+    m_UvBuffer->Map(0, nullptr, reinterpret_cast<void**>(&mapped));
+
+    memcpy(mapped, m_Model.UvBuffer.Data.data(), size);
+
+    m_UvBuffer->Unmap(0, nullptr);
+
+    m_UvBufferView = {
+      .BufferLocation = m_UvBuffer->GetGPUVirtualAddress(),
+      .SizeInBytes = size,
+      .StrideInBytes = stride
+    };
+  }
+}
+
+void App::CreateTexture() {
+  const auto& img = m_Model.Img;
+
+  D3D12_RESOURCE_DESC textureDesc = {
+    .Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D,
     .Alignment = 0,
-    .Width = size,
-    .Height = 1,
+    .Width = static_cast<uint64_t>(img.Width),
+    .Height = static_cast<uint32_t>(img.Height),
     .DepthOrArraySize = 1,
     .MipLevels = 1,
-    .Format = DXGI_FORMAT_UNKNOWN,
+    .Format = DXGI_FORMAT_R8G8B8A8_UNORM,
     .SampleDesc = {.Count = 1, .Quality = 0 },
-    .Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+    .Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN,
     .Flags = D3D12_RESOURCE_FLAG_NONE
   };
 
-  m_Device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &bufferDesc,
-      D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&m_VertBuffer));
+  {
+    D3D12_HEAP_PROPERTIES heapProps = {
+      .Type = D3D12_HEAP_TYPE_DEFAULT,
+      .CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+      .MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN,
+      .CreationNodeMask = 1,
+      .VisibleNodeMask = 1
+    };
+
+    m_Device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &textureDesc,
+        D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&m_Texture));
+  }
+
+  D3D12_PLACED_SUBRESOURCE_FOOTPRINT layout;
+
+  uint32_t numRows = 0;
+  uint64_t rowSize = 0;
+
+  uint64_t requiredSize = 0;
+
+  m_Device->GetCopyableFootprints(&textureDesc, 0, 1, 0, &layout, &numRows, &rowSize, 
+      &requiredSize);
+
+  {
+    D3D12_HEAP_PROPERTIES heapProps = {
+      .Type = D3D12_HEAP_TYPE_UPLOAD,
+      .CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+      .MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN,
+      .CreationNodeMask = 1,
+      .VisibleNodeMask = 1
+    };
+
+    D3D12_RESOURCE_DESC bufferDesc = {
+      .Dimension = D3D12_RESOURCE_DIMENSION_BUFFER,
+      .Alignment = 0,
+      .Width = requiredSize,
+      .Height = 1,
+      .DepthOrArraySize = 1,
+      .MipLevels = 1,
+      .Format = DXGI_FORMAT_UNKNOWN,
+      .SampleDesc = {.Count = 1, .Quality = 0 },
+      .Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+      .Flags = D3D12_RESOURCE_FLAG_NONE
+    };
+
+    m_Device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &bufferDesc,
+        D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&m_UploadBuffer));
+  }
 
   std::byte* mapped = nullptr;
-  m_VertBuffer->Map(0, nullptr, reinterpret_cast<void**>(&mapped));
+  m_UploadBuffer->Map(0, nullptr, reinterpret_cast<void**>(&mapped));
 
-  memcpy(mapped, m_Model.PosBuffer.Data.data(), size);
+  auto* dst = mapped + layout.Offset;
+  int dstRowPitch = layout.Footprint.RowPitch;
 
-  m_VertBuffer->Unmap(0, nullptr);
+  const auto* src = img.Data.data();
+  int srcRowPitch = img.Width * img.NumChannels;
 
-  m_VertBufferView = {
-    .BufferLocation = m_VertBuffer->GetGPUVirtualAddress(),
-    .SizeInBytes = static_cast<uint32_t>(size),
-    .StrideInBytes = sizeof(float) * 3
+  for (uint32_t y = 0; y < numRows; y++) {
+    memcpy(dst + dstRowPitch * y, src + srcRowPitch * y, rowSize);
+  }
+
+  m_UploadBuffer->Unmap(0, nullptr);
+
+  m_CmdAlloc->Reset();
+  m_CmdList->Reset(m_CmdAlloc.Get(), nullptr);
+
+  D3D12_TEXTURE_COPY_LOCATION copyDst = {
+    .pResource = m_Texture.Get(),
+    .Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
+    .SubresourceIndex = 0
   };
+
+  D3D12_TEXTURE_COPY_LOCATION copySrc = {
+    .pResource = m_UploadBuffer.Get(),
+    .Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
+    .PlacedFootprint = layout
+  };
+
+  m_CmdList->CopyTextureRegion(&copyDst, 0, 0, 0, &copySrc, nullptr);
+
+  D3D12_RESOURCE_BARRIER barrier = {
+    .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+    .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
+    .Transition = {
+      .pResource = m_Texture.Get(),
+      .Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+      .StateBefore = D3D12_RESOURCE_STATE_COPY_DEST,
+      .StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+    }
+  };
+
+  m_CmdList->ResourceBarrier(1, &barrier);
+
+  m_CmdList->Close();
+
+  ID3D12CommandList* cmdLists[] = { m_CmdList.Get() };
+  m_CmdQueue->ExecuteCommandLists(static_cast<uint32_t>(std::size(cmdLists)), cmdLists);
+
+  m_FenceValue++;
+  m_CmdQueue->Signal(m_Fence.Get(), m_FenceValue);
+
+  D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {
+    .Format = textureDesc.Format,
+    .ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D,
+    .Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
+    .Texture2D = {
+      .MipLevels = 1
+    }
+  };
+
+  m_Device->CreateShaderResourceView(m_Texture.Get(), &srvDesc, 
+      m_SrvHeap->GetCPUDescriptorHandleForHeapStart());
 }
 
 std::vector<std::byte> App::ReadFile(std::filesystem::path path) {

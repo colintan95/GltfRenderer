@@ -38,6 +38,9 @@
     <ClInclude Include="GltfModel.h">
       <Filter>Source Files</Filter>
     </ClInclude>
+    <ClInclude Include="external\stb\stb_image.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="ShaderVS.hlsl">

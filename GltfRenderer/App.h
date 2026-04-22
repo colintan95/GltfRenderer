@@ -24,8 +24,12 @@ private:
 
   void CreatePipeline();
 
+  void CreateDescriptorHeaps();
+
   void CreateIndexBuffer();
-  void CreateVertexBuffer();
+  void CreateVertexBuffers();
+
+  void CreateTexture();
 
   std::vector<std::byte> ReadFile(std::filesystem::path path);
 
@@ -50,8 +54,8 @@ private:
 
   Microsoft::WRL::ComPtr<ID3D12Resource> m_RenderTargets[kFrameCount];
 
-  Microsoft::WRL::ComPtr<ID3D12Fence> m_PresentFence;
-  uint64_t m_PresentFenceValue;
+  Microsoft::WRL::ComPtr<ID3D12Fence> m_Fence;
+  uint64_t m_FenceValue;
 
   Microsoft::WRL::ComPtr<ID3D12CommandQueue> m_CmdQueue;
 
@@ -61,9 +65,18 @@ private:
   Microsoft::WRL::ComPtr<ID3D12RootSignature> m_RootSig;
   Microsoft::WRL::ComPtr<ID3D12PipelineState> m_Pipeline;
 
+  Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_SrvHeap;
+
   Microsoft::WRL::ComPtr<ID3D12Resource> m_IdxBuffer;
   D3D12_INDEX_BUFFER_VIEW m_IdxBufferView;
 
-  Microsoft::WRL::ComPtr<ID3D12Resource> m_VertBuffer;
-  D3D12_VERTEX_BUFFER_VIEW m_VertBufferView;
+  Microsoft::WRL::ComPtr<ID3D12Resource> m_PosBuffer;
+  D3D12_VERTEX_BUFFER_VIEW m_PosBufferView;
+
+  Microsoft::WRL::ComPtr<ID3D12Resource> m_UvBuffer;
+  D3D12_VERTEX_BUFFER_VIEW m_UvBufferView;
+
+  Microsoft::WRL::ComPtr<ID3D12Resource> m_Texture;
+
+  Microsoft::WRL::ComPtr<ID3D12Resource> m_UploadBuffer;
 };

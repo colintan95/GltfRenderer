@@ -135,6 +135,7 @@
   <ItemGroup>
     <ClInclude Include="App.h" />
     <ClInclude Include="external\nlohmann\json.hpp" />
+    <ClInclude Include="external\stb\stb_image.h" />
     <ClInclude Include="GltfModel.h" />
     <ClInclude Include="ShaderShared.h" />
   </ItemGroup>

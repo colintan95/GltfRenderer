@@ -1,15 +1,21 @@
 #include "GltfModel.h"
 
+#include "external/nlohmann/json.hpp"
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "external/stb/stb_image.h"
+
 #include <fstream>
 
 using json = nlohmann::json;
 
 template<typename T>
-std::optional<std::vector<T>> ReadBufferData(int accessorIdx, int numComponents, const json& gltf, 
+std::optional<GltfBuffer<T>> ReadBuffer(int accessorIdx, int numComponents, const json& gltf,
 		std::filesystem::path dir) {
-	std::vector<T> result;
+	GltfBuffer<T> result;
 
 	const auto& accessor = gltf["accessors"][accessorIdx];
+	int vertCount = accessor["count"];
 
 	int viewIdx = accessor["bufferView"];
 	const auto& view = gltf["bufferViews"][viewIdx];
@@ -22,13 +28,11 @@ std::optional<std::vector<T>> ReadBufferData(int accessorIdx, int numComponents,
 	int offset = view["byteOffset"];
 	int size = view["byteLength"];
 
-	int vertCount = accessor["count"];
-
 	if (vertCount * numComponents * sizeof(T) != size) {
 		return std::nullopt;
 	}
 
-	result.resize(size);
+	result.Data.resize(vertCount * numComponents);
 
 	std::ifstream strm(path, std::ios::binary);
 	if (!strm.is_open()) {
@@ -36,7 +40,44 @@ std::optional<std::vector<T>> ReadBufferData(int accessorIdx, int numComponents,
 	}
 
 	strm.seekg(offset);
-	strm.read(reinterpret_cast<char*>(result.data()), size);
+	strm.read(reinterpret_cast<char*>(result.Data.data()), size);
+
+	result.NumComponents = numComponents;
+
+	return result;
+}
+
+static std::optional<GltfImage> ReadImage(int imageIdx, const json& gltf, 
+		std::filesystem::path dir) {
+	GltfImage result;
+
+	const auto& image = gltf["images"][imageIdx];
+
+	std::filesystem::path uri = image["uri"];
+	std::filesystem::path path = dir / uri;
+
+	int width = 0;
+	int height = 0;
+
+	static constexpr int kNumChannels = 4;
+
+	unsigned char* data = stbi_load(path.string().c_str(), &width, &height, nullptr, kNumChannels);
+	if (data == nullptr) {
+		return std::nullopt;
+	}
+
+	int size = width * height * kNumChannels;
+
+	// TODO: See if we can do this without a copy.
+	result.Data.resize(size);
+	memcpy(result.Data.data(), data, size);
+	
+	stbi_image_free(data);
+
+	result.Width = width;
+	result.Height = height;
+
+	result.NumChannels = kNumChannels;
 
 	return result;
 }
@@ -53,20 +94,27 @@ std::optional<GltfModel> LoadGltf(std::filesystem::path path) {
 
 	std::filesystem::path dir = path.parent_path();
 
-	if (auto res = ReadBufferData<uint16_t>(0, 1, gltf, dir)) {
-		result.IdxBuffer = {
-			.Data = *res,
-			.NumComponents = 1
-		};
+	if (auto res = ReadBuffer<uint16_t>(0, 1, gltf, dir)) {
+		result.IdxBuffer = *res;
 	} else {
 		return std::nullopt;
 	}
 
-	if (auto res = ReadBufferData<float>(1, 3, gltf, dir)) {
-		result.PosBuffer = {
-			.Data = *res,
-			.NumComponents = 3
-		};
+	if (auto res = ReadBuffer<float>(1, 3, gltf, dir)) {
+		result.PosBuffer = *res;
+	} else {
+		return std::nullopt;
+	}
+
+	if (auto res = ReadBuffer<float>(4, 2, gltf, dir)) {
+		result.UvBuffer = *res;
+	}
+	else {
+		return std::nullopt;
+	}
+
+	if (auto res = ReadImage(0, gltf, dir)) {
+		result.Img = *res;
 	} else {
 		return std::nullopt;
 	}
