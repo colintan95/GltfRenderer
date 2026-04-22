@@ -129,10 +129,13 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="App.cpp" />
+    <ClCompile Include="GltfModel.cpp" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="App.h" />
+    <ClInclude Include="external\nlohmann\json.hpp" />
+    <ClInclude Include="GltfModel.h" />
     <ClInclude Include="ShaderShared.h" />
   </ItemGroup>
   <ItemGroup>

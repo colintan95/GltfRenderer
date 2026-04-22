@@ -1,5 +1,6 @@
 #pragma once
-#pragma once
+
+#include "GltfModel.h"
 
 #include <d3d12.h>
 #include <dxgi1_6.h>
@@ -12,7 +13,7 @@
 
 class App {
 public:
-  App(HWND hwnd);
+  bool Init(HWND hwnd);
 
   void Render();
 
@@ -23,10 +24,12 @@ private:
 
   void CreatePipeline();
 
+  void CreateIndexBuffer();
   void CreateVertexBuffer();
 
-protected:
   std::vector<std::byte> ReadFile(std::filesystem::path path);
+
+  GltfModel m_Model;
 
   HWND m_Hwnd;
 
@@ -57,6 +60,9 @@ protected:
 
   Microsoft::WRL::ComPtr<ID3D12RootSignature> m_RootSig;
   Microsoft::WRL::ComPtr<ID3D12PipelineState> m_Pipeline;
+
+  Microsoft::WRL::ComPtr<ID3D12Resource> m_IdxBuffer;
+  D3D12_INDEX_BUFFER_VIEW m_IdxBufferView;
 
   Microsoft::WRL::ComPtr<ID3D12Resource> m_VertBuffer;
   D3D12_VERTEX_BUFFER_VIEW m_VertBufferView;

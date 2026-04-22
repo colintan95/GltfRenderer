@@ -4,7 +4,13 @@
 
 using Microsoft::WRL::ComPtr;
 
-App::App(HWND hwnd) {
+bool App::Init(HWND hwnd) {
+  if (auto res = LoadGltf("D:/glTF-Sample-Assets/Models/Cube/glTF/Cube.gltf")) {
+    m_Model = *res;
+  } else {
+    return false;
+  }
+
   m_Hwnd = hwnd;
 
   RECT wndRect = {};
@@ -19,7 +25,10 @@ App::App(HWND hwnd) {
 
   CreatePipeline();
 
+  CreateIndexBuffer();
   CreateVertexBuffer();
+
+  return true;
 }
 
 void App::Render() {
@@ -78,9 +87,12 @@ void App::Render() {
   m_CmdList->ClearRenderTargetView(rtvHandle, color, 0, nullptr);
 
   m_CmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+  m_CmdList->IASetIndexBuffer(&m_IdxBufferView);
   m_CmdList->IASetVertexBuffers(0, 1, &m_VertBufferView);
 
-  m_CmdList->DrawInstanced(3, 1, 0, 0);
+  auto vertCount = m_Model.IdxBuffer.Data.size();
+  m_CmdList->DrawInstanced(static_cast<uint32_t>(vertCount), 1, 0, 0);
 
   D3D12_RESOURCE_BARRIER presentBarrier = {
     .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
@@ -244,14 +256,14 @@ void App::CreatePipeline() {
   };
 
   D3D12_DEPTH_STENCIL_DESC depthStencil = {
-    .DepthEnable = false,
+    .DepthEnable = true,
+    .DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL,
+    .DepthFunc = D3D12_COMPARISON_FUNC_LESS,
     .StencilEnable = false
   };
 
   D3D12_INPUT_ELEMENT_DESC inputs[] = {
     { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
-      0 },
-    { "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
       0 }
   };
 
@@ -276,13 +288,8 @@ void App::CreatePipeline() {
   m_Device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_Pipeline));
 }
 
-void App::CreateVertexBuffer() {
-  constexpr float vertData[] = {
-    -0.5f, -0.5f, 0.f, 1.f, 0.f, 0.f, 1.f,
-    0.f, 0.5f, 0.f,    0.f, 1.f, 0.f, 1.f,
-    0.5f, -0.5f, 0.f,  0.f, 0.f, 1.f, 1.f
-  };
-  const auto vertDataSize = sizeof(vertData);
+void App::CreateIndexBuffer() {
+  auto size = m_Model.IdxBuffer.Data.size() * sizeof(uint16_t);
 
   D3D12_HEAP_PROPERTIES heapProps = {
     .Type = D3D12_HEAP_TYPE_UPLOAD,
@@ -295,7 +302,48 @@ void App::CreateVertexBuffer() {
   D3D12_RESOURCE_DESC bufferDesc = {
     .Dimension = D3D12_RESOURCE_DIMENSION_BUFFER,
     .Alignment = 0,
-    .Width = vertDataSize,
+    .Width = size,
+    .Height = 1,
+    .DepthOrArraySize = 1,
+    .MipLevels = 1,
+    .Format = DXGI_FORMAT_UNKNOWN,
+    .SampleDesc = {.Count = 1, .Quality = 0 },
+    .Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+    .Flags = D3D12_RESOURCE_FLAG_NONE
+  };
+
+  m_Device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &bufferDesc,
+      D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&m_IdxBuffer));
+
+  std::byte* mapped = nullptr;
+  m_IdxBuffer->Map(0, nullptr, reinterpret_cast<void**>(&mapped));
+
+  memcpy(mapped, m_Model.IdxBuffer.Data.data(), size);
+
+  m_IdxBuffer->Unmap(0, nullptr);
+
+  m_IdxBufferView = {
+    .BufferLocation = m_IdxBuffer->GetGPUVirtualAddress(),
+    .SizeInBytes = static_cast<uint32_t>(size),
+    .Format = DXGI_FORMAT_R16_UINT
+  };
+}
+
+void App::CreateVertexBuffer() {
+  auto size = m_Model.PosBuffer.Data.size() * m_Model.PosBuffer.NumComponents * sizeof(float);
+
+  D3D12_HEAP_PROPERTIES heapProps = {
+    .Type = D3D12_HEAP_TYPE_UPLOAD,
+    .CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+    .MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN,
+    .CreationNodeMask = 1,
+    .VisibleNodeMask = 1
+  };
+
+  D3D12_RESOURCE_DESC bufferDesc = {
+    .Dimension = D3D12_RESOURCE_DIMENSION_BUFFER,
+    .Alignment = 0,
+    .Width = size,
     .Height = 1,
     .DepthOrArraySize = 1,
     .MipLevels = 1,
@@ -307,21 +355,18 @@ void App::CreateVertexBuffer() {
 
   m_Device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &bufferDesc,
       D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&m_VertBuffer));
-  {
-    std::byte* mapped = nullptr;
 
-    D3D12_RANGE range = { .Begin = 0, .End = 0 };
-    m_VertBuffer->Map(0, &range, reinterpret_cast<void**>(&mapped));
+  std::byte* mapped = nullptr;
+  m_VertBuffer->Map(0, nullptr, reinterpret_cast<void**>(&mapped));
 
-    memcpy(mapped, vertData, vertDataSize);
+  memcpy(mapped, m_Model.PosBuffer.Data.data(), size);
 
-    m_VertBuffer->Unmap(0, nullptr);
-  }
+  m_VertBuffer->Unmap(0, nullptr);
 
   m_VertBufferView = {
     .BufferLocation = m_VertBuffer->GetGPUVirtualAddress(),
-    .SizeInBytes = vertDataSize,
-    .StrideInBytes = sizeof(float) * 7
+    .SizeInBytes = static_cast<uint32_t>(size),
+    .StrideInBytes = sizeof(float) * 3
   };
 }
 

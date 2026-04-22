@@ -34,7 +34,10 @@ int WinMain(HINSTANCE hinstance, HINSTANCE, LPSTR, int cmdShow) {
 
   ShowWindow(hwnd, cmdShow);
 
-  App app(hwnd);
+  App app;
+  if (!app.Init(hwnd)) {
+    return -1;
+  }
 
   MSG msg = {};
   while (msg.message != WM_QUIT) {
@@ -47,4 +50,6 @@ int WinMain(HINSTANCE hinstance, HINSTANCE, LPSTR, int cmdShow) {
       Sleep(16);
     }
   }
+
+  return 0;
 }
