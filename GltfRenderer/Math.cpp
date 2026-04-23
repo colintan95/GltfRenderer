@@ -113,3 +113,46 @@ Vec3 operator*(const Vec3& v, const Mat4& M) {
 
 	return res;
 }
+
+Angle::Angle() {
+	m_Value = 0.f;
+}
+
+float Angle::Rad() {
+	return m_Value;
+}
+
+Angle Angle::Rad(float value) {
+	Angle res;
+	res.m_Value = value;
+
+	return res;
+}
+
+Angle Angle::Deg(float value) {
+	Angle res;
+	res.m_Value = value / 180.f * kPi;
+
+	return res;
+}
+
+float Angle::Wrap(float value) {
+	if (value < 0.f) {
+    value = kTwoPi + std::fmod(value, kTwoPi);
+  } else if (value >= kTwoPi) {
+    value = std::fmod(value, kTwoPi);
+  }
+
+	return value;
+}
+
+void Angle::operator+=(Angle theta) {
+	m_Value = Wrap(m_Value + theta.m_Value);
+}
+
+Angle operator+(Angle theta0, Angle theta1) {
+	Angle res;
+	res.m_Value = Angle::Wrap(theta0.m_Value + theta1.m_Value);
+
+	return res;
+}

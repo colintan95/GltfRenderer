@@ -1,5 +1,7 @@
 #pragma once
 
+#include <numbers>
+
 struct Vec3 {
 	float x;
 	float y;
@@ -30,3 +32,27 @@ struct Mat4 {
 Mat4 operator*(const Mat4& M0, const Mat4& M1);
 
 Vec3 operator*(const Vec3& v, const Mat4& M);
+
+constexpr float kPi = std::numbers::pi_v<float>;
+constexpr float kTwoPi = 2.f * kPi;
+
+class Angle {
+public:
+	Angle();
+
+	float Rad();
+	
+	static Angle Rad(float value);
+	static Angle Deg(float value);
+
+	void operator+=(Angle theta);
+
+	friend Angle operator+(Angle theta0, Angle theta1);
+
+private:
+	static float Wrap(float value);
+
+	float m_Value;
+};
+
+Angle operator+(Angle th0, Angle th1);

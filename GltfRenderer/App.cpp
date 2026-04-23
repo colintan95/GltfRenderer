@@ -1,16 +1,11 @@
 #include "App.h"
 
 #include <fstream>
+#include <iostream>
 
 using Microsoft::WRL::ComPtr;
 
 bool App::Init(HWND hwnd) {
-  if (auto res = LoadGltf("D:/glTF-Sample-Assets/Models/Cube/glTF/Cube.gltf")) {
-    m_Model = *res;
-  } else {
-    return false;
-  }
-
   m_Hwnd = hwnd;
 
   RECT wndRect = {};
@@ -19,13 +14,18 @@ bool App::Init(HWND hwnd) {
   m_ScreenWidth = wndRect.right;
   m_ScreenHeight = wndRect.bottom;
 
-  Mat4 modelMat = Mat4::Identity();
-  Mat4 viewMat = Mat4::RotateXZ(0.7f) * Mat4::RotateYZ(0.5f) * Mat4::Translate(0.f, 0.f, 5.f);
+  if (auto res = LoadGltf("D:/glTF-Sample-Assets/Models/Cube/glTF/Cube.gltf")) {
+    m_Model = *res;
+  } else {
+    return false;
+  }
+
+  m_ModelMat = Mat4::Identity();
 
   float aspect = static_cast<float>(m_ScreenWidth) / static_cast<float>(m_ScreenHeight);
-  Mat4 projMat = Mat4::Projection(1.2f, aspect, 0.1f, 10.f);
+  m_ProjMat = Mat4::Projection(1.2f, aspect, 0.1f, 10.f);
 
-  m_MvpMat = modelMat * viewMat * projMat;
+  m_Yaw = Angle::Rad(0.f);
 
   CreateDevice();
 
@@ -47,6 +47,19 @@ bool App::Init(HWND hwnd) {
 void App::Render() {
   if (m_Fence->GetCompletedValue() < m_FenceValue) {
     return;
+  }
+
+  Mat4 viewMat = Mat4::RotateXZ(m_Yaw.Rad()) * Mat4::RotateYZ(m_Pitch.Rad()) 
+      * Mat4::Translate(0.f, 0.f, 5.f);
+  Mat4 mvpMat = m_ModelMat * viewMat * m_ProjMat;
+
+  {
+    std::byte* mapped = nullptr;
+    m_ConstantBuffer->Map(0, nullptr, reinterpret_cast<void**>(&mapped));
+
+    memcpy(mapped, &mvpMat, sizeof(mvpMat));
+
+    m_ConstantBuffer->Unmap(0, nullptr);
   }
 
   m_FrameIdx = m_SwapChain->GetCurrentBackBufferIndex();
@@ -136,6 +149,14 @@ void App::Render() {
 
   m_FenceValue++;
   m_CmdQueue->Signal(m_Fence.Get(), m_FenceValue);
+}
+
+void App::AddYaw(Angle delta) {
+  m_Yaw += delta;
+}
+
+void App::AddPitch(Angle delta) {
+  m_Pitch += delta;
 }
 
 void App::CreateDevice() {
@@ -509,7 +530,7 @@ void App::CreateVertexBuffers() {
 }
 
 void App::CreateConstantBuffer() {
-  uint32_t dataSize = sizeof(m_MvpMat);
+  uint32_t dataSize = sizeof(Mat4);
   uint32_t bufferSize = D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT;
 
   D3D12_HEAP_PROPERTIES heapProps = {
@@ -535,13 +556,6 @@ void App::CreateConstantBuffer() {
 
   m_Device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &bufferDesc,
       D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&m_ConstantBuffer));
-
-  std::byte* mapped = nullptr;
-  m_ConstantBuffer->Map(0, nullptr, reinterpret_cast<void**>(&mapped));
-
-  memcpy(mapped, &m_MvpMat, dataSize);
-
-  m_ConstantBuffer->Unmap(0, nullptr);
 
   m_CbvCpuHandle = m_DescriptorHeap->GetCPUDescriptorHandleForHeapStart();
   m_CbvGpuHandle = m_DescriptorHeap->GetGPUDescriptorHandleForHeapStart();

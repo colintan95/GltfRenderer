@@ -18,6 +18,9 @@ public:
 
   void Render();
 
+  void AddYaw(Angle delta);
+  void AddPitch(Angle delta);
+
 private:
   void CreateDevice();
 
@@ -35,13 +38,18 @@ private:
 
   std::vector<std::byte> ReadFile(std::filesystem::path path);
 
-  GltfModel m_Model;
-  Mat4 m_MvpMat;
-
   HWND m_Hwnd;
 
   uint32_t m_ScreenWidth;
   uint32_t m_ScreenHeight;
+
+  GltfModel m_Model;
+
+  Mat4 m_ModelMat;
+  Mat4 m_ProjMat;
+
+  Angle m_Yaw;
+  Angle m_Pitch;
 
   static constexpr uint8_t kFrameCount = 2;
 
