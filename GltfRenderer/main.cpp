@@ -11,11 +11,11 @@ static std::optional<POINT> s_PrevMousePos = std::nullopt;
 static LRESULT WindowProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
   switch (msg) {
     case WM_LBUTTONDOWN:
+      s_PrevMousePos = std::nullopt;
       s_LeftBtnDown = true;
       break;
 
     case WM_LBUTTONUP:
-      s_PrevMousePos = std::nullopt;
       s_LeftBtnDown = false;
       break;
 

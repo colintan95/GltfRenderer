@@ -1,12 +1,15 @@
 #pragma once
 
+#include <dxgiformat.h>
+
 #include <filesystem>
 #include <vector>
 
-template<typename T>
 struct GltfBuffer {
-	std::vector<T> Data;
-	int NumComponents;
+	std::vector<std::byte> Data;
+
+	int Stride;
+	DXGI_FORMAT Format;
 };
 
 struct GltfImage {
@@ -19,10 +22,10 @@ struct GltfImage {
 };
 
 struct GltfModel {
-	GltfBuffer<uint16_t> IdxBuffer;
+	GltfBuffer IndexBuffer;
 
-	GltfBuffer<float> PosBuffer;
-	GltfBuffer<float> UvBuffer;
+	GltfBuffer PosBuffer;
+	GltfBuffer UvBuffer;
 
 	GltfImage Img;
 };

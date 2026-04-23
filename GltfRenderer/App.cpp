@@ -31,12 +31,12 @@ bool App::Init(HWND hwnd) {
 
   CreateSwapChainAndCmdList();
 
+  CreateIndexBuffer();
+  CreateVertexBuffers();
+
   CreatePipeline();
 
   CreateDescriptorHeap();
-
-  CreateIndexBuffer();
-  CreateVertexBuffers();
 
   CreateConstantBuffer();
   CreateTexture();
@@ -119,12 +119,12 @@ void App::Render() {
   m_CmdList->ClearRenderTargetView(rtvHandle, color, 0, nullptr);
 
   m_CmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-  m_CmdList->IASetIndexBuffer(&m_IdxBufferView);
+  m_CmdList->IASetIndexBuffer(&m_IndexBufferView);
 
   D3D12_VERTEX_BUFFER_VIEW vertBufferViews[] = { m_PosBufferView, m_UvBufferView };
   m_CmdList->IASetVertexBuffers(0, std::size(vertBufferViews), vertBufferViews);
 
-  auto vertCount = m_Model.IdxBuffer.Data.size();
+  auto vertCount = m_Model.IndexBuffer.Data.size();
   m_CmdList->DrawInstanced(static_cast<uint32_t>(vertCount), 1, 0, 0);
 
   D3D12_RESOURCE_BARRIER presentBarrier = {
@@ -232,6 +232,137 @@ void App::CreateSwapChainAndCmdList() {
       IID_PPV_ARGS(&m_CmdList));
 
   m_CmdList->Close();
+}
+
+void App::CreateIndexBuffer() {
+  uint32_t size = static_cast<uint32_t>(m_Model.IndexBuffer.Data.size());
+
+  D3D12_HEAP_PROPERTIES heapProps = {
+    .Type = D3D12_HEAP_TYPE_UPLOAD,
+    .CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+    .MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN,
+    .CreationNodeMask = 1,
+    .VisibleNodeMask = 1
+  };
+
+  D3D12_RESOURCE_DESC bufferDesc = {
+    .Dimension = D3D12_RESOURCE_DIMENSION_BUFFER,
+    .Alignment = 0,
+    .Width = size,
+    .Height = 1,
+    .DepthOrArraySize = 1,
+    .MipLevels = 1,
+    .Format = DXGI_FORMAT_UNKNOWN,
+    .SampleDesc = {.Count = 1, .Quality = 0 },
+    .Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+    .Flags = D3D12_RESOURCE_FLAG_NONE
+  };
+
+  m_Device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &bufferDesc,
+      D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&m_IndexBuffer));
+
+  std::byte* mapped = nullptr;
+  m_IndexBuffer->Map(0, nullptr, reinterpret_cast<void**>(&mapped));
+
+  memcpy(mapped, m_Model.IndexBuffer.Data.data(), size);
+
+  m_IndexBuffer->Unmap(0, nullptr);
+
+  m_IndexBufferView = {
+    .BufferLocation = m_IndexBuffer->GetGPUVirtualAddress(),
+    .SizeInBytes = static_cast<uint32_t>(size),
+    .Format = m_Model.IndexBuffer.Format
+  };
+}
+
+void App::CreateVertexBuffers() {
+  {
+    uint32_t stride = m_Model.PosBuffer.Stride;
+    uint32_t size = static_cast<uint32_t>(m_Model.PosBuffer.Data.size());
+
+    D3D12_HEAP_PROPERTIES heapProps = {
+      .Type = D3D12_HEAP_TYPE_UPLOAD,
+      .CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+      .MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN,
+      .CreationNodeMask = 1,
+      .VisibleNodeMask = 1
+    };
+
+    D3D12_RESOURCE_DESC bufferDesc = {
+      .Dimension = D3D12_RESOURCE_DIMENSION_BUFFER,
+      .Alignment = 0,
+      .Width = size,
+      .Height = 1,
+      .DepthOrArraySize = 1,
+      .MipLevels = 1,
+      .Format = DXGI_FORMAT_UNKNOWN,
+      .SampleDesc = {.Count = 1, .Quality = 0 },
+      .Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+      .Flags = D3D12_RESOURCE_FLAG_NONE
+    };
+
+    m_Device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &bufferDesc,
+        D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&m_PosBuffer));
+
+    std::byte* mapped = nullptr;
+    m_PosBuffer->Map(0, nullptr, reinterpret_cast<void**>(&mapped));
+
+    memcpy(mapped, m_Model.PosBuffer.Data.data(), size);
+
+    m_PosBuffer->Unmap(0, nullptr);
+
+    m_PosBufferView = {
+      .BufferLocation = m_PosBuffer->GetGPUVirtualAddress(),
+      .SizeInBytes = size,
+      .StrideInBytes = stride
+    };
+
+    m_PosVertexFormat = m_Model.PosBuffer.Format;
+  }
+  
+  {
+    uint32_t stride = m_Model.UvBuffer.Stride;
+    uint32_t size = static_cast<uint32_t>(m_Model.UvBuffer.Data.size());
+
+    D3D12_HEAP_PROPERTIES heapProps = {
+      .Type = D3D12_HEAP_TYPE_UPLOAD,
+      .CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+      .MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN,
+      .CreationNodeMask = 1,
+      .VisibleNodeMask = 1
+    };
+
+    D3D12_RESOURCE_DESC bufferDesc = {
+      .Dimension = D3D12_RESOURCE_DIMENSION_BUFFER,
+      .Alignment = 0,
+      .Width = size,
+      .Height = 1,
+      .DepthOrArraySize = 1,
+      .MipLevels = 1,
+      .Format = DXGI_FORMAT_UNKNOWN,
+      .SampleDesc = {.Count = 1, .Quality = 0 },
+      .Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+      .Flags = D3D12_RESOURCE_FLAG_NONE
+    };
+
+    m_Device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &bufferDesc,
+        D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&m_UvBuffer));
+
+    std::byte* mapped = nullptr;
+    m_UvBuffer->Map(0, nullptr, reinterpret_cast<void**>(&mapped));
+
+    memcpy(mapped, m_Model.UvBuffer.Data.data(), size);
+
+    m_UvBuffer->Unmap(0, nullptr);
+
+    m_UvBufferView = {
+      .BufferLocation = m_UvBuffer->GetGPUVirtualAddress(),
+      .SizeInBytes = size,
+      .StrideInBytes = stride
+    };
+
+    m_UvVertexFormat = m_Model.UvBuffer.Format;
+  }
 }
 
 void App::CreatePipeline() {
@@ -365,10 +496,8 @@ void App::CreatePipeline() {
   //};
 
   D3D12_INPUT_ELEMENT_DESC inputs[] = {
-    { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
-      0 },
-    { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 1, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
-      0 }
+    { "POSITION", 0, m_PosVertexFormat, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+    { "TEXCOORD", 0, m_UvVertexFormat, 1, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
   };
 
   D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {
@@ -392,47 +521,6 @@ void App::CreatePipeline() {
   m_Device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_Pipeline));
 }
 
-void App::CreateIndexBuffer() {
-  auto size = m_Model.IdxBuffer.Data.size() * sizeof(uint16_t);
-
-  D3D12_HEAP_PROPERTIES heapProps = {
-    .Type = D3D12_HEAP_TYPE_UPLOAD,
-    .CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
-    .MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN,
-    .CreationNodeMask = 1,
-    .VisibleNodeMask = 1
-  };
-
-  D3D12_RESOURCE_DESC bufferDesc = {
-    .Dimension = D3D12_RESOURCE_DIMENSION_BUFFER,
-    .Alignment = 0,
-    .Width = size,
-    .Height = 1,
-    .DepthOrArraySize = 1,
-    .MipLevels = 1,
-    .Format = DXGI_FORMAT_UNKNOWN,
-    .SampleDesc = {.Count = 1, .Quality = 0 },
-    .Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
-    .Flags = D3D12_RESOURCE_FLAG_NONE
-  };
-
-  m_Device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &bufferDesc,
-      D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&m_IdxBuffer));
-
-  std::byte* mapped = nullptr;
-  m_IdxBuffer->Map(0, nullptr, reinterpret_cast<void**>(&mapped));
-
-  memcpy(mapped, m_Model.IdxBuffer.Data.data(), size);
-
-  m_IdxBuffer->Unmap(0, nullptr);
-
-  m_IdxBufferView = {
-    .BufferLocation = m_IdxBuffer->GetGPUVirtualAddress(),
-    .SizeInBytes = static_cast<uint32_t>(size),
-    .Format = DXGI_FORMAT_R16_UINT
-  };
-}
-
 void App::CreateDescriptorHeap() {
   D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {
     .Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
@@ -441,92 +529,6 @@ void App::CreateDescriptorHeap() {
   };
 
   m_Device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&m_DescriptorHeap));
-}
-
-void App::CreateVertexBuffers() {
-  {
-    uint32_t stride = m_Model.PosBuffer.NumComponents * sizeof(float);
-    uint32_t size = static_cast<uint32_t>(m_Model.PosBuffer.Data.size()) * stride;
-
-    D3D12_HEAP_PROPERTIES heapProps = {
-      .Type = D3D12_HEAP_TYPE_UPLOAD,
-      .CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
-      .MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN,
-      .CreationNodeMask = 1,
-      .VisibleNodeMask = 1
-    };
-
-    D3D12_RESOURCE_DESC bufferDesc = {
-      .Dimension = D3D12_RESOURCE_DIMENSION_BUFFER,
-      .Alignment = 0,
-      .Width = size,
-      .Height = 1,
-      .DepthOrArraySize = 1,
-      .MipLevels = 1,
-      .Format = DXGI_FORMAT_UNKNOWN,
-      .SampleDesc = {.Count = 1, .Quality = 0 },
-      .Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
-      .Flags = D3D12_RESOURCE_FLAG_NONE
-    };
-
-    m_Device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &bufferDesc,
-        D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&m_PosBuffer));
-
-    std::byte* mapped = nullptr;
-    m_PosBuffer->Map(0, nullptr, reinterpret_cast<void**>(&mapped));
-
-    memcpy(mapped, m_Model.PosBuffer.Data.data(), size);
-
-    m_PosBuffer->Unmap(0, nullptr);
-
-    m_PosBufferView = {
-      .BufferLocation = m_PosBuffer->GetGPUVirtualAddress(),
-      .SizeInBytes = size,
-      .StrideInBytes = stride
-    };
-  }
-  
-  {
-    uint32_t stride = m_Model.UvBuffer.NumComponents * sizeof(float);
-    uint32_t size = static_cast<uint32_t>(m_Model.UvBuffer.Data.size()) * stride;
-
-    D3D12_HEAP_PROPERTIES heapProps = {
-      .Type = D3D12_HEAP_TYPE_UPLOAD,
-      .CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
-      .MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN,
-      .CreationNodeMask = 1,
-      .VisibleNodeMask = 1
-    };
-
-    D3D12_RESOURCE_DESC bufferDesc = {
-      .Dimension = D3D12_RESOURCE_DIMENSION_BUFFER,
-      .Alignment = 0,
-      .Width = size,
-      .Height = 1,
-      .DepthOrArraySize = 1,
-      .MipLevels = 1,
-      .Format = DXGI_FORMAT_UNKNOWN,
-      .SampleDesc = {.Count = 1, .Quality = 0 },
-      .Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
-      .Flags = D3D12_RESOURCE_FLAG_NONE
-    };
-
-    m_Device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &bufferDesc,
-        D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&m_UvBuffer));
-
-    std::byte* mapped = nullptr;
-    m_UvBuffer->Map(0, nullptr, reinterpret_cast<void**>(&mapped));
-
-    memcpy(mapped, m_Model.UvBuffer.Data.data(), size);
-
-    m_UvBuffer->Unmap(0, nullptr);
-
-    m_UvBufferView = {
-      .BufferLocation = m_UvBuffer->GetGPUVirtualAddress(),
-      .SizeInBytes = size,
-      .StrideInBytes = stride
-    };
-  }
 }
 
 void App::CreateConstantBuffer() {

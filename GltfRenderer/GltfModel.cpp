@@ -9,12 +9,38 @@
 
 using json = nlohmann::json;
 
-template<typename T>
-std::optional<GltfBuffer<T>> ReadBuffer(int accessorIdx, int numComponents, const json& gltf,
+static std::optional<GltfBuffer> ReadBuffer(int accessorIdx, const json& gltf, 
 		std::filesystem::path dir) {
-	GltfBuffer<T> result;
+	GltfBuffer result;
 
 	const auto& accessor = gltf["accessors"][accessorIdx];
+
+	std::string_view vertexType = accessor["type"];
+
+	int numComponents = 1;
+
+	if (vertexType == "VEC3") {
+		numComponents = 3;
+	} else if (vertexType == "VEC2") {
+		numComponents = 2;
+	} else if (vertexType == "SCALAR") {
+		numComponents = 1;
+	} else {
+		return std::nullopt;
+	}
+
+	int componentType = accessor["componentType"];
+
+	int componentSize = 0;
+
+	if (componentType == 5126) {
+		componentSize = sizeof(float);
+	} else if (componentType == 5123) {
+		componentSize = sizeof(uint16_t);
+	} else {
+		return std::nullopt;
+	}
+
 	int vertCount = accessor["count"];
 
 	int viewIdx = accessor["bufferView"];
@@ -28,11 +54,11 @@ std::optional<GltfBuffer<T>> ReadBuffer(int accessorIdx, int numComponents, cons
 	int offset = view["byteOffset"];
 	int size = view["byteLength"];
 
-	if (vertCount * numComponents * sizeof(T) != size) {
+	if (vertCount * numComponents * componentSize != size) {
 		return std::nullopt;
 	}
 
-	result.Data.resize(vertCount * numComponents);
+	result.Data.resize(size);
 
 	std::ifstream strm(path, std::ios::binary);
 	if (!strm.is_open()) {
@@ -42,7 +68,31 @@ std::optional<GltfBuffer<T>> ReadBuffer(int accessorIdx, int numComponents, cons
 	strm.seekg(offset);
 	strm.read(reinterpret_cast<char*>(result.Data.data()), size);
 
-	result.NumComponents = numComponents;
+	DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
+
+	if (componentType == 5126) {
+		if (numComponents == 3) {
+			format = DXGI_FORMAT_R32G32B32_FLOAT;
+
+		} else if (numComponents == 2) {
+			format = DXGI_FORMAT_R32G32_FLOAT;
+
+		}	else {
+			return std::nullopt;
+		}
+
+	} else if (componentType == 5123) {
+		if (numComponents == 1) {
+			format= DXGI_FORMAT_R16_UINT;
+		} else {
+			return std::nullopt;
+		}
+	} else {
+		return std::nullopt;
+	}
+
+	result.Stride = numComponents * componentSize;
+	result.Format = format;
 
 	return result;
 }
@@ -90,23 +140,33 @@ std::optional<GltfModel> LoadGltf(std::filesystem::path path) {
 		return std::nullopt;
 	}
 
-	json gltf = json::parse(strm);
+	const json gltf = json::parse(strm);
+
+	const auto& mesh = gltf["meshes"][0];
+	const auto& primitive = mesh["primitives"][0];
+
+	int indexIdx = primitive["indices"];
+
+	const auto& attributes = primitive["attributes"];
+
+	int posIdx = attributes["POSITION"];
+	int uvIdx = attributes["TEXCOORD_0"];
 
 	std::filesystem::path dir = path.parent_path();
 
-	if (auto res = ReadBuffer<uint16_t>(0, 1, gltf, dir)) {
-		result.IdxBuffer = *res;
+	if (auto res = ReadBuffer(indexIdx, gltf, dir)) {
+		result.IndexBuffer = *res;
 	} else {
 		return std::nullopt;
 	}
 
-	if (auto res = ReadBuffer<float>(1, 3, gltf, dir)) {
+	if (auto res = ReadBuffer(posIdx, gltf, dir)) {
 		result.PosBuffer = *res;
 	} else {
 		return std::nullopt;
 	}
 
-	if (auto res = ReadBuffer<float>(4, 2, gltf, dir)) {
+	if (auto res = ReadBuffer(uvIdx, gltf, dir)) {
 		result.UvBuffer = *res;
 	}
 	else {

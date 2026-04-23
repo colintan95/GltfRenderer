@@ -26,12 +26,12 @@ private:
 
   void CreateSwapChainAndCmdList();
 
+  void CreateIndexBuffer();
+  void CreateVertexBuffers();
+
   void CreatePipeline();
 
   void CreateDescriptorHeap();
-
-  void CreateIndexBuffer();
-  void CreateVertexBuffers();
 
   void CreateConstantBuffer();
   void CreateTexture();
@@ -73,19 +73,23 @@ private:
   Microsoft::WRL::ComPtr<ID3D12CommandAllocator> m_CmdAlloc;
   Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> m_CmdList;
 
-  Microsoft::WRL::ComPtr<ID3D12RootSignature> m_RootSig;
-  Microsoft::WRL::ComPtr<ID3D12PipelineState> m_Pipeline;
-
-  Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_DescriptorHeap;
-
-  Microsoft::WRL::ComPtr<ID3D12Resource> m_IdxBuffer;
-  D3D12_INDEX_BUFFER_VIEW m_IdxBufferView;
+  Microsoft::WRL::ComPtr<ID3D12Resource> m_IndexBuffer;
+  D3D12_INDEX_BUFFER_VIEW m_IndexBufferView;
 
   Microsoft::WRL::ComPtr<ID3D12Resource> m_PosBuffer;
   D3D12_VERTEX_BUFFER_VIEW m_PosBufferView;
 
+  DXGI_FORMAT m_PosVertexFormat;
+
   Microsoft::WRL::ComPtr<ID3D12Resource> m_UvBuffer;
   D3D12_VERTEX_BUFFER_VIEW m_UvBufferView;
+
+  DXGI_FORMAT m_UvVertexFormat;
+
+  Microsoft::WRL::ComPtr<ID3D12RootSignature> m_RootSig;
+  Microsoft::WRL::ComPtr<ID3D12PipelineState> m_Pipeline;
+
+  Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_DescriptorHeap;
 
   Microsoft::WRL::ComPtr<ID3D12Resource> m_ConstantBuffer;
 
