@@ -1,6 +1,7 @@
 #pragma once
 
 #include "GltfModel.h"
+#include "Math.h"
 
 #include <d3d12.h>
 #include <dxgi1_6.h>
@@ -24,16 +25,18 @@ private:
 
   void CreatePipeline();
 
-  void CreateDescriptorHeaps();
+  void CreateDescriptorHeap();
 
   void CreateIndexBuffer();
   void CreateVertexBuffers();
 
+  void CreateConstantBuffer();
   void CreateTexture();
 
   std::vector<std::byte> ReadFile(std::filesystem::path path);
 
   GltfModel m_Model;
+  Mat4 m_MvpMat;
 
   HWND m_Hwnd;
 
@@ -65,7 +68,7 @@ private:
   Microsoft::WRL::ComPtr<ID3D12RootSignature> m_RootSig;
   Microsoft::WRL::ComPtr<ID3D12PipelineState> m_Pipeline;
 
-  Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_SrvHeap;
+  Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_DescriptorHeap;
 
   Microsoft::WRL::ComPtr<ID3D12Resource> m_IdxBuffer;
   D3D12_INDEX_BUFFER_VIEW m_IdxBufferView;
@@ -76,7 +79,15 @@ private:
   Microsoft::WRL::ComPtr<ID3D12Resource> m_UvBuffer;
   D3D12_VERTEX_BUFFER_VIEW m_UvBufferView;
 
+  Microsoft::WRL::ComPtr<ID3D12Resource> m_ConstantBuffer;
+
+  D3D12_CPU_DESCRIPTOR_HANDLE m_CbvCpuHandle;
+  D3D12_GPU_DESCRIPTOR_HANDLE m_CbvGpuHandle;
+
   Microsoft::WRL::ComPtr<ID3D12Resource> m_Texture;
+
+  D3D12_CPU_DESCRIPTOR_HANDLE m_SrvCpuHandle;
+  D3D12_GPU_DESCRIPTOR_HANDLE m_SrvGpuHandle;
 
   Microsoft::WRL::ComPtr<ID3D12Resource> m_UploadBuffer;
 };

@@ -19,17 +19,26 @@ bool App::Init(HWND hwnd) {
   m_ScreenWidth = wndRect.right;
   m_ScreenHeight = wndRect.bottom;
 
+  Mat4 modelMat = Mat4::Identity();
+  Mat4 viewMat = Mat4::RotateXZ(0.7f) * Mat4::RotateYZ(0.5f) * Mat4::Translate(0.f, 0.f, 5.f);
+
+  float aspect = static_cast<float>(m_ScreenWidth) / static_cast<float>(m_ScreenHeight);
+  Mat4 projMat = Mat4::Projection(1.2f, aspect, 0.1f, 10.f);
+
+  m_MvpMat = modelMat * viewMat * projMat;
+
   CreateDevice();
 
   CreateSwapChainAndCmdList();
 
   CreatePipeline();
 
-  CreateDescriptorHeaps();
+  CreateDescriptorHeap();
 
   CreateIndexBuffer();
   CreateVertexBuffers();
 
+  CreateConstantBuffer();
   CreateTexture();
 
   return true;
@@ -47,10 +56,11 @@ void App::Render() {
 
   m_CmdList->SetGraphicsRootSignature(m_RootSig.Get());
 
-  ID3D12DescriptorHeap* heaps[] = { m_SrvHeap.Get() };
+  ID3D12DescriptorHeap* heaps[] = { m_DescriptorHeap.Get() };
   m_CmdList->SetDescriptorHeaps(std::size(heaps), heaps);
 
-  m_CmdList->SetGraphicsRootDescriptorTable(0, m_SrvHeap->GetGPUDescriptorHandleForHeapStart());
+  m_CmdList->SetGraphicsRootDescriptorTable(0, m_CbvGpuHandle);
+  m_CmdList->SetGraphicsRootDescriptorTable(1, m_SrvGpuHandle);
 
   D3D12_VIEWPORT viewport = {
     .TopLeftX = 0,
@@ -204,7 +214,16 @@ void App::CreateSwapChainAndCmdList() {
 }
 
 void App::CreatePipeline() {
-  D3D12_DESCRIPTOR_RANGE1 range = {
+  D3D12_DESCRIPTOR_RANGE1 cbvRange = {
+    .RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV,
+    .NumDescriptors = 1,
+    .BaseShaderRegister = 0,
+    .RegisterSpace = 0,
+    .Flags = D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC,
+    .OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND
+  };
+
+  D3D12_DESCRIPTOR_RANGE1 srvRange = {
     .RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
     .NumDescriptors = 1,
     .BaseShaderRegister = 0,
@@ -213,13 +232,23 @@ void App::CreatePipeline() {
     .OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND
   };
 
-  D3D12_ROOT_PARAMETER1 rootParam = {
-    .ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
-    .DescriptorTable = {
-      .NumDescriptorRanges = 1,
-      .pDescriptorRanges = &range
+  D3D12_ROOT_PARAMETER1 params[] = {
+    {
+      .ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
+      .DescriptorTable = {
+        .NumDescriptorRanges = 1,
+        .pDescriptorRanges = &cbvRange
+      },
+      .ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX
     },
-    .ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL
+    {
+      .ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
+      .DescriptorTable = {
+        .NumDescriptorRanges = 1,
+        .pDescriptorRanges = &srvRange
+      },
+      .ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL
+    }
   };
 
   D3D12_STATIC_SAMPLER_DESC sampler = {
@@ -241,8 +270,8 @@ void App::CreatePipeline() {
   D3D12_VERSIONED_ROOT_SIGNATURE_DESC rootSigDesc = {
     .Version = D3D_ROOT_SIGNATURE_VERSION_1_1,
     .Desc_1_1 = {
-      .NumParameters = 1,
-      .pParameters = &rootParam,
+      .NumParameters = static_cast<uint32_t>(std::size(params)),
+      .pParameters = params,
       .NumStaticSamplers = 1,
       .pStaticSamplers = &sampler,
       .Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
@@ -383,14 +412,14 @@ void App::CreateIndexBuffer() {
   };
 }
 
-void App::CreateDescriptorHeaps() {
+void App::CreateDescriptorHeap() {
   D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {
     .Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
-    .NumDescriptors = 1,
+    .NumDescriptors = 2,
     .Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE
   };
 
-  m_Device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&m_SrvHeap));
+  m_Device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&m_DescriptorHeap));
 }
 
 void App::CreateVertexBuffers() {
@@ -462,7 +491,7 @@ void App::CreateVertexBuffers() {
     };
 
     m_Device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &bufferDesc,
-      D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&m_UvBuffer));
+        D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&m_UvBuffer));
 
     std::byte* mapped = nullptr;
     m_UvBuffer->Map(0, nullptr, reinterpret_cast<void**>(&mapped));
@@ -477,6 +506,52 @@ void App::CreateVertexBuffers() {
       .StrideInBytes = stride
     };
   }
+}
+
+void App::CreateConstantBuffer() {
+  uint32_t dataSize = sizeof(m_MvpMat);
+  uint32_t bufferSize = D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT;
+
+  D3D12_HEAP_PROPERTIES heapProps = {
+    .Type = D3D12_HEAP_TYPE_UPLOAD,
+    .CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+    .MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN,
+    .CreationNodeMask = 1,
+    .VisibleNodeMask = 1
+  };
+
+  D3D12_RESOURCE_DESC bufferDesc = {
+    .Dimension = D3D12_RESOURCE_DIMENSION_BUFFER,
+    .Alignment = 0,
+    .Width = bufferSize,
+    .Height = 1,
+    .DepthOrArraySize = 1,
+    .MipLevels = 1,
+    .Format = DXGI_FORMAT_UNKNOWN,
+    .SampleDesc = {.Count = 1, .Quality = 0 },
+    .Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+    .Flags = D3D12_RESOURCE_FLAG_NONE
+  };
+
+  m_Device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &bufferDesc,
+      D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&m_ConstantBuffer));
+
+  std::byte* mapped = nullptr;
+  m_ConstantBuffer->Map(0, nullptr, reinterpret_cast<void**>(&mapped));
+
+  memcpy(mapped, &m_MvpMat, dataSize);
+
+  m_ConstantBuffer->Unmap(0, nullptr);
+
+  m_CbvCpuHandle = m_DescriptorHeap->GetCPUDescriptorHandleForHeapStart();
+  m_CbvGpuHandle = m_DescriptorHeap->GetGPUDescriptorHandleForHeapStart();
+
+  D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {
+    .BufferLocation = m_ConstantBuffer->GetGPUVirtualAddress(),
+    .SizeInBytes = bufferSize
+  };
+
+  m_Device->CreateConstantBufferView(&cbvDesc, m_CbvCpuHandle);
 }
 
 void App::CreateTexture() {
@@ -597,6 +672,15 @@ void App::CreateTexture() {
   m_FenceValue++;
   m_CmdQueue->Signal(m_Fence.Get(), m_FenceValue);
 
+  uint32_t handleSize = m_Device->GetDescriptorHandleIncrementSize(
+      D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+  m_SrvCpuHandle = m_DescriptorHeap->GetCPUDescriptorHandleForHeapStart();
+  m_SrvCpuHandle.ptr += handleSize;
+
+  m_SrvGpuHandle = m_DescriptorHeap->GetGPUDescriptorHandleForHeapStart();
+  m_SrvGpuHandle.ptr += handleSize;
+
   D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {
     .Format = textureDesc.Format,
     .ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D,
@@ -606,9 +690,9 @@ void App::CreateTexture() {
     }
   };
 
-  m_Device->CreateShaderResourceView(m_Texture.Get(), &srvDesc, 
-      m_SrvHeap->GetCPUDescriptorHandleForHeapStart());
+  m_Device->CreateShaderResourceView(m_Texture.Get(), &srvDesc, m_SrvCpuHandle);
 }
+
 
 std::vector<std::byte> App::ReadFile(std::filesystem::path path) {
   std::vector<std::byte> result;
